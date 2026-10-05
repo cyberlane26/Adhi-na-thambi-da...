@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Player</title>
+<style>
+  :root { --accent:#ff3d3d; --bg:#0f0f0f; --card:#1b1b1b; --text:#f1f1f1; --muted:#aaa; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  body { background:var(--bg); color:var(--text); font-family:Roboto,Arial,sans-serif; }
+  .page { max-width:960px; margin:0 auto; padding:12px; }
+
+  /* ===== Player ===== */
+  .player { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:16/9; user-select:none; }
+  .player:fullscreen { border-radius:0; aspect-ratio:auto; width:100%; height:100%; }
+  video { width:100%; height:100%; display:block; background:#000; object-fit:contain; }
+  .player.fill video { object-fit:cover; }
+  .player.stretch video { object-fit:fill; }
+
+  .overlay { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:space-between;
+    background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent 30%,transparent 65%,rgba(0,0,0,.8));
+    opacity:0; transition:opacity .25s; pointer-events:none; }
+  .player.show .overlay { opacity:1; pointer-events:auto; }
+  .player.hide-cursor { cursor:none; }
+
+  .top { display:flex; align-items:center; gap:10px; padding:10px 14px; font-size:15px; }
+  .top .title { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+
+  .center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:36px; pointer-events:none; }
+  .center button { pointer-events:auto; }
+  .big { width:68px; height:68px; border-radius:50%; background:rgba(0,0,0,.55); font-size:30px; }
+  .skipbtn { width:50px; height:50px; border-radius:50%; background:rgba(0,0,0,.45); font-size:13px; font-weight:600; }
+
+  .bottom { padding:0 12px 8px; }
+  .seekwrap { position:relative; height:22px; display:flex; align-items:center; cursor:pointer; touch-action:none; }
+  .bar { position:relative; width:100%; height:4px; background:rgba(255,255,255,.3); border-radius:3px; transition:height .15s; }
+  .seekwrap:hover .bar { height:6px; }
+  .buf,.prog { position:absolute; left:0; top:0; height:100%; border-radius:3px; }
+  .buf { background:rgba(255,255,255,.4); width:0; }
+  .prog { background:var(--accent); width:0; }
+  .thumb { position:absolute; top:50%; width:14px; height:14px; background:var(--accent); border-radius:50%; transform:translate(-50%,-50%) scale(0); transition:transform .15s; left:0; }
+  .seekwrap:hover .thumb, .seeking .thumb { transform:translate(-50%,-50%) scale(1); }
+  .tip { position:absolute; bottom:26px; background:rgba(0,0,0,.85); padding:3px 7px; border-radius:4px; font-size:12px; transform:translateX(-50%); display:none; }
+  .seekwrap:hover .tip { display:block; }
+
+  .controls { display:flex; align-items:center; gap:4px; }
+  .controls .spacer { flex:1; }
+  .time { font-size:13px; margin:0 8px; white-space:nowrap; }
+  button { background:none; border:0; color:#fff; cursor:pointer; font-size:20px; padding:6px 8px; border-radius:6px; }
+  button:hover { background:rgba(255,255,255,.15); }
+  button.active { color:var(--accent); }
+
+  .vol { display:flex; align-items:center; }
+  .vol input { width:0; opacity:0; transition:width .2s,opacity .2s; accent-color:var(--accent); }
+  .vol:hover input { width:70px; opacity:1; margin-right:6px; }
+
+  .menu { position:absolute; right:12px; bottom:70px; background:rgba(25,25,25,.96); border-radius:10px; padding:6px; min-width:150px; display:none; z-index:5; }
+  .menu.open { display:block; }
+  .menu h4 { font-size:12px; color:var(--muted); padding:6px 10px; font-weight:500; }
+  .menu div.opt { padding:8px 12px; font-size:14px; cursor:pointer; border-radius:6px; }
+  .menu div.opt:hover { background:rgba(255,255,255,.12); }
+  .menu div.opt.sel { color:var(--accent); font-weight:600; }
+
+  .toast { position:absolute; top:18%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); padding:8px 16px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.on { opacity:1; }
+  .ripple { position:absolute; top:50%; transform:translateY(-50%); width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.2);
+    display:flex; align-items:center; justify-content:center; font-size:15px; opacity:0; pointer-events:none; }
+  .ripple.l { left:8%; } .ripple.r { right:8%; }
+  .ripple.go { animation:rip .5s; }
+  @keyframes rip { 0%{opacity:1} 100%{opacity:0} }
+  .spinner { position:absolute; top:50%; left:50%; width:48px; height:48px; margin:-24px; border:4px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; display:none; pointer-events:none; }
+  .player.loading .spinner { display:block; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* lock mode (MX Player style) */
+  .lockbtn { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:none; background:rgba(0,0,0,.6); border-radius:50%; width:60px; height:60px; z-index:6; }
+  .player.locked .overlay { display:none; }
+  .player.locked.show .lockbtn { display:block; }
+
+  /* ===== Info section ===== */
+  .info { margin-top:14px; }
+  .info h1 { font-size:20px; font-weight:600; line-height:1.3; }
+  .profile { display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .avatar { width:44px; height:44px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; overflow:hidden; flex-shrink:0; }
+  .avatar img { width:100%; height:100%; object-fit:cover; }
+  .pname { font-weight:600; font-size:16px; }
+  .psub { font-size:13px; color:var(--muted); }
+  .desc { background:var(--card); border-radius:12px; padding:12px 14px; margin-top:14px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="player show" id="player" tabindex="0">
+    <video id="v" playsinline preload="metadata"></video>
+
+    <div class="spinner"></div>
+    <div class="ripple l" id="rl">⏪ 10s</div>
+    <div class="ripple r" id="rr">10s ⏩</div>
+    <div class="toast" id="toast"></div>
+    <button class="lockbtn" id="unlock" title="Unlock">🔒</button>
+
+    <div class="overlay" id="overlay">
+      <div class="top">
+        <span class="title" id="topTitle"></span>
+        <button id="lockBtn" title="Lock controls">🔓</button>
+      </div>
+
+      <div class="center">
+        <button class="skipbtn" id="back">−10</button>
+        <button class="big" id="bigPlay">▶</button>
+        <button class="skipbtn" id="fwd">+10</button>
+      </div>
+
+      <div class="bottom">
+        <div class="seekwrap" id="seek">
+          <div class="bar"><div class="buf" id="buf"></div><div class="prog" id="prog"></div></div>
+          <div class="thumb" id="thumb"></div>
+          <div class="tip" id="tip">0:00</div>
+        </div>
+        <div class="controls">
+          <button id="play">▶</button>
+          <div class="vol">
+            <button id="mute">🔊</button>
+            <input type="range" id="vol" min="0" max="1" step="0.05" value="1">
+          </div>
+          <span class="time" id="time">0:00 / 0:00</span>
+          <span class="spacer"></span>
+          <button id="loop" title="Loop">🔁</button>
+          <button id="ratio" title="Aspect ratio">⛶</button>
+          <button id="gear" title="Speed">⚙️</button>
+          <button id="pip" title="Picture in picture">🗗</button>
+          <button id="fs" title="Fullscreen">⤢</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu" id="menu"></div>
+  </div>
+
+  <div class="info">
+    <h1 id="caption"></h1>
+    <div class="profile">
+      <div class="avatar" id="avatar"></div>
+      <div>
+        <div class="pname" id="pname"></div>
+        <div class="psub" id="psub"></div>
+      </div>
+    </div>
+    <div class="desc" id="desc"></div>
+  </div>
+</div>
+
+<script>
+/* =====================================================
+   ✏️  EDIT ONLY THIS PART
+   ===================================================== */
+const CONFIG = {
+  videoSrc:    "video.mp4",              // your video file (same folder) or a direct URL
+  poster:      "",                       // optional thumbnail image, e.g. "poster.jpg"
+  caption:     "My First Video",         // 👈 change caption here
+  profileName: "Your Name",              // 👈 profile name shown to viewers
+  profileSub:  "Creator",                // small text under the name (can be "")
+  profilePhoto:"",                       // optional image e.g. "me.jpg" (blank = first letter)
+  description: "Write something about the video here.", // optional
+  accent:      "#ff3d3d"                 // player colour
+};
+/* ===================================================== */
+
+const $ = id => document.getElementById(id);
+const player=$('player'), v=$('v'), menu=$('menu');
+
+// ---- fill page from config
+document.documentElement.style.setProperty('--accent', CONFIG.accent);
+document.title = CONFIG.caption + " – " + CONFIG.profileName;
+$('caption').textContent = CONFIG.caption;
+$('topTitle').textContent = CONFIG.caption;
+$('pname').textContent = CONFIG.profileName;
+$('psub').textContent = CONFIG.profileSub;
+$('desc').textContent = CONFIG.description;
+$('desc').style.display = CONFIG.description ? 'block' : 'none';
+$('avatar').innerHTML = CONFIG.profilePhoto
+  ? `<img src="${CONFIG.profilePhoto}" alt="">`
+  : (CONFIG.profileName.trim()[0] || '?').toUpperCase();
+v.src = CONFIG.videoSrc;
+if (CONFIG.poster) v.poster = CONFIG.poster;
+
+// ---- helpers
+const fmt = s => {
+  if (!isFinite(s)) return '0:00';
+  s = Math.floor(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = s%60;
+  return (h ? h+':'+String(m).padStart(2,'0') : m) + ':' + String(sec).padStart(2,'0');
+};
+let toastT;
+const toast = t => { const el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('on'),900); };
+
+// ---- play / pause
+const toggle = () => v.paused ? v.play() : v.pause();
+['play','bigPlay'].forEach(id => $(id).onclick = toggle);
+v.addEventListener('play',  () => { $('play').textContent='⏸'; $('bigPlay').textContent='⏸'; kick(); });
+v.addEventListener('pause', () => { $('play').textContent='▶'; $('bigPlay').textContent='▶'; player.classList.add('show'); });
+v.addEventListener('waiting', () => player.classList.add('loading'));
+v.addEventListener('canplay', () => player.classList.remove('loading'));
+v.addEventListener('error', () => toast('Video not found – check videoSrc'));
+
+// ---- skip
+const skip = d => { v.currentTime = Math.max(0, Math.min(v.duration||0, v.currentTime + d)); };
+$('back').onclick = () => skip(-10);
+$('fwd').onclick  = () => skip(10);
+
+// ---- progress
+v.addEventListener('timeupdate', () => {
+  const p = v.duration ? v.currentTime / v.duration * 100 : 0;
+  $('prog').style.width = p + '%'; $('thumb').style.left = p + '%';
+  $('time').textContent = fmt(v.currentTime) + ' / ' + fmt(v.duration);
+});
+v.addEventListener('loadedmetadata', () => $('time').textContent = '0:00 / ' + fmt(v.duration));
+v.addEventListener('progress', () => {
+  if (v.buffered.length && v.duration) $('buf').style.width = v.buffered.end(v.buffered.length-1)/v.duration*100 + '%';
+});
+
+// ---- seeking (mouse + touch)
+const seek = $('seek');
+const posToTime = e => {
+  const r = seek.getBoundingClientRect(), x = (e.touches?e.touches[0].clientX:e.clientX) - r.left;
+  return Math.max(0, Math.min(1, x / r.width)) * (v.duration||0);
+};
+let dragging = false;
+const doSeek = e => { v.currentTime = posToTime(e); };
+seek.addEventListener('pointerdown', e => { dragging = true; seek.classList.add('seeking'); seek.setPointerCapture(e.pointerId); doSeek(e); });
+seek.addEventListener('pointermove', e => {
+  const r = seek.getBoundingClientRect();
+  $('tip').style.left = Math.max(20, Math.min(r.width-20, e.clientX - r.left)) + 'px';
+  $('tip').textContent = fmt(posToTime(e));
+  if (dragging) doSeek(e);
+});
+seek.addEventListener('pointerup', () => { dragging = false; seek.classList.remove('seeking'); });
+
+// ---- volume
+$('vol').oninput = e => { v.volume = e.target.value; v.muted = false; };
+$('mute').onclick = () => v.muted = !v.muted;
+v.addEventListener('volumechange', () => {
+  $('mute').textContent = (v.muted || v.volume === 0) ? '🔇' : v.volume < .5 ? '🔉' : '🔊';
+  $('vol').value = v.muted ? 0 : v.volume;
+});
+
+// ---- loop, aspect ratio
+$('loop').onclick = () => { v.loop = !v.loop; $('loop').classList.toggle('active', v.loop); toast(v.loop ? 'Loop on' : 'Loop off'); };
+const modes = [['','Fit'],['fill','Fill (crop)'],['stretch','Stretch']]; let mi = 0;
+$('ratio').onclick = () => {
+  mi = (mi+1) % modes.length;
+  player.classList.remove('fill','stretch');
+  if (modes[mi][0]) player.classList.add(modes[mi][0]);
+  toast(modes[mi][1]);
+};
+
+// ---- speed menu
+const speeds = [0.25,0.5,0.75,1,1.25,1.5,1.75,2];
+$('gear').onclick = e => {
+  e.stopPropagation();
+  menu.innerHTML = '<h4>Playback speed</h4>' + speeds.map(s =>
+    `<div class="opt ${v.playbackRate===s?'sel':''}" data-s="${s}">${s===1?'Normal':s+'x'}</div>`).join('');
+  menu.classList.toggle('open');
+};
+menu.onclick = e => {
+  const s = e.target.dataset.s;
+  if (s) { v.playbackRate = +s; toast(s + 'x'); menu.classList.remove('open'); }
+};
+document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.classList.remove('open'); });
+
+// ---- PiP + fullscreen
+if (!document.pictureInPictureEnabled) $('pip').style.display = 'none';
+$('pip').onclick = () => document.pictureInPictureElement ? document.exitPictureInPicture() : v.requestPictureInPicture();
+const goFS = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (player.requestFullscreen) player.requestFullscreen();
+  else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();   // iPhone
+};
+$('fs').onclick = goFS;
+document.addEventListener('fullscreenchange', () => {
+  $('fs').textContent = document.fullscreenElement ? '⤡' : '⤢';
+  if (document.fullscreenElement && screen.orientation?.lock) screen.orientation.lock('landscape').catch(()=>{});
+});
+
+// ---- lock (MX Player style)
+$('lockBtn').onclick = e => { e.stopPropagation(); player.classList.add('locked'); player.classList.add('show'); toast('Controls locked'); kick(); };
+$('unlock').onclick = e => { e.stopPropagation(); player.classList.remove('locked'); toast('Unlocked'); };
+
+// ---- show/hide controls
+let hideT;
+function kick() {
+  player.classList.add('show'); player.classList.remove('hide-cursor');
+  clearTimeout(hideT);
+  hideT = setTimeout(() => {
+    if (!v.paused && !seek.classList.contains('seeking') && !menu.classList.contains('open')) {
+      player.classList.remove('show'); player.classList.add('hide-cursor');
+    }
+  }, 3000);
+}
+player.addEventListener('mousemove', kick);
+
+// ---- tap / double-tap (left = -10s, right = +10s, middle = play)
+let lastTap = 0, tapTimer;
+v.addEventListener('click', e => {
+  if (player.classList.contains('locked')) { player.classList.toggle('show'); return; }
+  const now = Date.now(), r = v.getBoundingClientRect(), x = (e.clientX - r.left) / r.width;
+  if (now - lastTap < 300) {
+    clearTimeout(tapTimer);
+    if (x < .35)      { skip(-10); flash('rl'); }
+    else if (x > .65) { skip(10);  flash('rr'); }
+    else goFS();
+    lastTap = 0;
+  } else {
+    lastTap = now;
+    tapTimer = setTimeout(() => {
+      if (player.classList.contains('show') && !v.paused) player.classList.remove('show');
+      else { kick(); }
+      if (x >= .35 && x <= .65 && !('ontouchstart' in window)) toggle();
+    }, 300);
+  }
+});
+function flash(id){ const el=$(id); el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); }
+
+// ---- keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'k') { e.preventDefault(); toggle(); }
+  else if (k === 'arrowright' || k === 'l') { skip(10); flash('rr'); }
+  else if (k === 'arrowleft'  || k === 'j') { skip(-10); flash('rl'); }
+  else if (k === 'arrowup')   { e.preventDefault(); v.volume = Math.min(1, v.volume + .1); toast('Volume ' + Math.round(v.volume*100) + '%'); }
+  else if (k === 'arrowdown') { e.preventDefault(); v.volume = Math.max(0, v.volume - .1); toast('Volume ' + Math.round(v.volume*100) + '%'); }
+  else if (k === 'm') v.muted = !v.muted;
+  else if (k === 'f') goFS();
+  else if (k === 'p') $('pip').click();
+  else if (k >= '0' && k <= '9') v.currentTime = v.duration * (+k / 10);
+  else return;
+  kick();
+});
+
+// resume where the viewer left off
+const KEY = 'pos:' + CONFIG.videoSrc;
+v.addEventListener('loadedmetadata', () => { const t = +localStorage.getItem(KEY); if (t > 5 && t < v.duration - 5) v.currentTime = t; });
+v.addEventListener('timeupdate', () => localStorage.setItem(KEY, v.currentTime));
+v.addEventListener('ended', () => localStorage.removeItem(KEY));
+</script>
+</body>
+</html>
