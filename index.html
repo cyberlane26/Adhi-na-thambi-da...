@@ -72,6 +72,9 @@
   .menu div.opt:hover { background:rgba(255,255,255,.12); }
   .menu div.opt.sel { color:var(--accent); font-weight:600; }
 
+  video::cue { background:rgba(0,0,0,.7); color:#fff; font-size:20px; line-height:1.4; }
+  #cc { font-size:14px; font-weight:700; border:2px solid #fff; padding:1px 6px; margin:0 4px; }
+  #cc.active { border-color:var(--accent); }
   .start { position:absolute; inset:0; z-index:20; background:rgba(0,0,0,.55); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; cursor:pointer; }
   .startbtn { width:84px; height:84px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:38px; padding-left:6px; }
   .starttxt { font-size:16px; font-weight:500; }
@@ -132,6 +135,7 @@
           </div>
           <span class="time" id="time">0:00 / 0:00</span>
           <span class="spacer"></span>
+          <button id="cc" title="Subtitles">CC</button>
           <button id="loop" title="Loop">🔁</button>
           <button id="ratio" title="Aspect ratio">⛶</button>
           <button id="gear" title="Speed">⚙️</button>
@@ -169,7 +173,14 @@ const CONFIG = {
   profileSub:  "Creator",                // small text under the name (can be "")
   profilePhoto:"",                       // optional image e.g. "me.jpg" (blank = first letter)
   description: "",                       // optional (blank = hidden)
-  accent:      "#ff3d3d"                 // player colour
+  accent:      "#ff3d3d",                // player colour
+
+  // Subtitles: put your .vtt files in a "subs" folder
+  subtitles: [
+    { label: "தமிழ்",   lang: "ta", src: "subs/ta.vtt" },
+    { label: "English", lang: "en", src: "subs/en.vtt" }
+  ],
+  defaultSubtitle: "ta"                  // "ta", "en" or "" (off)
 };
 /* ===================================================== */
 
@@ -284,7 +295,32 @@ $('gear').onclick = e => {
 menu.onclick = e => {
   const s = e.target.dataset.s;
   if (s) { v.playbackRate = +s; toast(s + 'x'); menu.classList.remove('open'); }
+  if (e.target.dataset.c !== undefined) { setSub(e.target.dataset.c); menu.classList.remove('open'); }
 };
+
+// ---- subtitles
+CONFIG.subtitles.forEach(s => {
+  const t = document.createElement('track');
+  t.kind = 'subtitles'; t.label = s.label; t.srclang = s.lang; t.src = s.src;
+  v.appendChild(t);
+});
+function setSub(lang) {
+  [...v.textTracks].forEach(t => t.mode = (t.language === lang) ? 'showing' : 'disabled');
+  $('cc').classList.toggle('active', !!lang);
+  const found = CONFIG.subtitles.find(s => s.lang === lang);
+  toast(found ? found.label : 'Subtitles off');
+}
+$('cc').onclick = e => {
+  e.stopPropagation();
+  const cur = [...v.textTracks].find(t => t.mode === 'showing')?.language || '';
+  menu.innerHTML = '<h4>Subtitles</h4><div class="opt ' + (!cur ? 'sel' : '') + '" data-c="">Off</div>' +
+    CONFIG.subtitles.map(s => `<div class="opt ${cur === s.lang ? 'sel' : ''}" data-c="${s.lang}">${s.label}</div>`).join('');
+  menu.classList.toggle('open');
+};
+v.addEventListener('loadedmetadata', () => setTimeout(() => {
+  [...v.textTracks].forEach(t => t.mode = 'disabled');
+  if (CONFIG.defaultSubtitle) { [...v.textTracks].forEach(t => { if (t.language === CONFIG.defaultSubtitle) t.mode = 'showing'; }); $('cc').classList.add('active'); }
+}, 100));
 document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.classList.remove('open'); });
 
 // ---- PiP + fullscreen
