@@ -209,13 +209,17 @@ let autoMuted = false;
 v.play().catch(() => {                 // browser blocked sound -> play muted, no button
   v.muted = true; autoMuted = true;
   v.play().catch(() => {});
+  setTimeout(() => { if (autoMuted) toast('🔇 Touch the screen for sound'); }, 600);
 });
 // the first touch / click / key press by the viewer turns the sound on
+const UNMUTE_EVENTS = ['pointerdown','mousedown','click','touchstart','touchend','keydown','wheel'];
 const unmuteOnce = () => {
-  if (autoMuted) { v.muted = false; v.volume = 1; autoMuted = false; }
-  ['pointerdown','touchstart','keydown','wheel'].forEach(ev => document.removeEventListener(ev, unmuteOnce, true));
+  if (!autoMuted) return;
+  v.muted = false; v.volume = 1; autoMuted = false;
+  if (v.paused) v.play().catch(() => {});
+  UNMUTE_EVENTS.forEach(ev => document.removeEventListener(ev, unmuteOnce, true));
 };
-['pointerdown','touchstart','keydown','wheel'].forEach(ev => document.addEventListener(ev, unmuteOnce, true));
+UNMUTE_EVENTS.forEach(ev => document.addEventListener(ev, unmuteOnce, true));
 
 // ---- helpers
 const fmt = s => {
