@@ -8,11 +8,22 @@
   :root { --accent:#ff3d3d; --bg:#0f0f0f; --card:#1b1b1b; --text:#f1f1f1; --muted:#aaa; }
   * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
   body { background:var(--bg); color:var(--text); font-family:Roboto,Arial,sans-serif; }
-  .page { max-width:960px; margin:0 auto; padding:12px; }
+  html,body { height:100%; overflow:hidden; }
+  .page { max-width:none; margin:0; padding:0; }
 
-  /* ===== Player ===== */
-  .player { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:16/9; user-select:none; }
-  .player:fullscreen { border-radius:0; aspect-ratio:auto; width:100%; height:100%; }
+  /* ===== Player (full screen page) ===== */
+  .player { position:relative; background:#000; overflow:hidden; width:100vw; height:100vh; height:100dvh; user-select:none; }
+  .player:fullscreen { width:100%; height:100%; }
+
+  /* caption + profile always visible on the video */
+  .meta { position:absolute; left:16px; right:90px; bottom:84px; z-index:3; pointer-events:none; text-shadow:0 1px 4px rgba(0,0,0,.9); }
+  .meta .profile { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .meta .avatar { width:40px; height:40px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; overflow:hidden; flex-shrink:0; }
+  .meta .avatar img { width:100%; height:100%; object-fit:cover; }
+  .meta .pname { font-weight:600; font-size:16px; }
+  .meta .psub { font-size:12px; color:#ddd; }
+  .meta .cap { font-size:18px; font-weight:600; line-height:1.35; }
+  .meta .desc { font-size:14px; color:#ddd; margin-top:4px; white-space:pre-wrap; }
   video { width:100%; height:100%; display:block; background:#000; object-fit:contain; }
   .player.fill video { object-fit:cover; }
   .player.stretch video { object-fit:fill; }
@@ -77,15 +88,6 @@
   .player.locked .overlay { display:none; }
   .player.locked.show .lockbtn { display:block; }
 
-  /* ===== Info section ===== */
-  .info { margin-top:14px; }
-  .info h1 { font-size:20px; font-weight:600; line-height:1.3; }
-  .profile { display:flex; align-items:center; gap:12px; margin-top:14px; }
-  .avatar { width:44px; height:44px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; overflow:hidden; flex-shrink:0; }
-  .avatar img { width:100%; height:100%; object-fit:cover; }
-  .pname { font-weight:600; font-size:16px; }
-  .psub { font-size:13px; color:var(--muted); }
-  .desc { background:var(--card); border-radius:12px; padding:12px 14px; margin-top:14px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
 </style>
 </head>
 <body>
@@ -135,19 +137,19 @@
       </div>
     </div>
 
-    <div class="menu" id="menu"></div>
-  </div>
-
-  <div class="info">
-    <h1 id="caption"></h1>
-    <div class="profile">
-      <div class="avatar" id="avatar"></div>
-      <div>
-        <div class="pname" id="pname"></div>
-        <div class="psub" id="psub"></div>
+    <div class="meta">
+      <div class="profile">
+        <div class="avatar" id="avatar"></div>
+        <div>
+          <div class="pname" id="pname"></div>
+          <div class="psub" id="psub"></div>
+        </div>
       </div>
+      <div class="cap" id="caption"></div>
+      <div class="desc" id="desc"></div>
     </div>
-    <div class="desc" id="desc"></div>
+
+    <div class="menu" id="menu"></div>
   </div>
 </div>
 
@@ -158,11 +160,11 @@
 const CONFIG = {
   videoSrc:    "video.mp4",              // your video file (same folder) or a direct URL
   poster:      "",                       // optional thumbnail image, e.g. "poster.jpg"
-  caption:     "My First Video",         // 👈 change caption here
-  profileName: "Your Name",              // 👈 profile name shown to viewers
+  caption:     "",                       // 👈 change caption here (blank = hidden)
+  profileName: "Dr4g0n",              // 👈 profile name shown to viewers
   profileSub:  "Creator",                // small text under the name (can be "")
   profilePhoto:"",                       // optional image e.g. "me.jpg" (blank = first letter)
-  description: "Write something about the video here.", // optional
+  description: "",                       // optional (blank = hidden)
   accent:      "#ff3d3d"                 // player colour
 };
 /* ===================================================== */
@@ -172,9 +174,9 @@ const player=$('player'), v=$('v'), menu=$('menu');
 
 // ---- fill page from config
 document.documentElement.style.setProperty('--accent', CONFIG.accent);
-document.title = CONFIG.caption + " – " + CONFIG.profileName;
+document.title = CONFIG.caption ? CONFIG.caption + " – " + CONFIG.profileName : CONFIG.profileName;
 $('caption').textContent = CONFIG.caption;
-$('topTitle').textContent = CONFIG.caption;
+$('caption').style.display = CONFIG.caption ? 'block' : 'none';
 $('pname').textContent = CONFIG.profileName;
 $('psub').textContent = CONFIG.profileSub;
 $('desc').textContent = CONFIG.description;
@@ -184,6 +186,19 @@ $('avatar').innerHTML = CONFIG.profilePhoto
   : (CONFIG.profileName.trim()[0] || '?').toUpperCase();
 v.src = CONFIG.videoSrc;
 if (CONFIG.poster) v.poster = CONFIG.poster;
+
+// ---- loop ON by default + autoplay
+v.loop = true;
+$('loop').classList.add('active');
+let autoMuted = false;
+v.play().catch(() => {                 // browsers block sound autoplay -> start muted
+  v.muted = true; autoMuted = true;
+  v.play().catch(() => {});
+  setTimeout(() => toast('Tap anywhere to unmute 🔊'), 400);
+});
+document.addEventListener('pointerdown', () => {   // first tap unmutes
+  if (autoMuted) { v.muted = false; autoMuted = false; }
+}, { capture:true });
 
 // ---- helpers
 const fmt = s => {
@@ -338,11 +353,6 @@ document.addEventListener('keydown', e => {
   kick();
 });
 
-// resume where the viewer left off
-const KEY = 'pos:' + CONFIG.videoSrc;
-v.addEventListener('loadedmetadata', () => { const t = +localStorage.getItem(KEY); if (t > 5 && t < v.duration - 5) v.currentTime = t; });
-v.addEventListener('timeupdate', () => localStorage.setItem(KEY, v.currentTime));
-v.addEventListener('ended', () => localStorage.removeItem(KEY));
 </script>
 </body>
 </html>
