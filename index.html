@@ -102,7 +102,6 @@
   <div class="player show" id="player" tabindex="0">
     <video id="v" playsinline preload="metadata"></video>
 
-    <div class="start" id="start"><div class="startbtn">▶</div><div class="starttxt">Tap to play</div></div>
     <div class="spinner"></div>
     <div class="ripple l" id="rl">⏪ 10s</div>
     <div class="ripple r" id="rr">10s ⏩</div>
@@ -180,7 +179,7 @@ const CONFIG = {
     { label: "தமிழ்",   lang: "ta", src: "subs/ta.vtt" },
     { label: "English", lang: "en", src: "subs/en.vtt" }
   ],
-  defaultSubtitle: "ta"                  // "ta", "en" or "" (off)
+  defaultSubtitle: ""                    // "" = off by default, or "ta" / "en"
 };
 /* ===================================================== */
 
@@ -206,14 +205,17 @@ if (CONFIG.poster) v.poster = CONFIG.poster;
 v.loop = true;
 $('loop').classList.add('active');
 v.muted = false; v.volume = 1;
-v.play().catch(() => {                 // browser blocked sound autoplay -> ask for one tap
-  $('start').style.display = 'flex';
+let autoMuted = false;
+v.play().catch(() => {                 // browser blocked sound -> play muted, no button
+  v.muted = true; autoMuted = true;
+  v.play().catch(() => {});
 });
-$('start').addEventListener('click', () => {
-  v.muted = false; v.volume = 1;
-  v.play();
-  $('start').style.display = 'none';
-});
+// the first touch / click / key press by the viewer turns the sound on
+const unmuteOnce = () => {
+  if (autoMuted) { v.muted = false; v.volume = 1; autoMuted = false; }
+  ['pointerdown','touchstart','keydown','wheel'].forEach(ev => document.removeEventListener(ev, unmuteOnce, true));
+};
+['pointerdown','touchstart','keydown','wheel'].forEach(ev => document.addEventListener(ev, unmuteOnce, true));
 
 // ---- helpers
 const fmt = s => {
