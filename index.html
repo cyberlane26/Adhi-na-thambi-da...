@@ -72,6 +72,9 @@
   .menu div.opt:hover { background:rgba(255,255,255,.12); }
   .menu div.opt.sel { color:var(--accent); font-weight:600; }
 
+  .start { position:absolute; inset:0; z-index:20; background:rgba(0,0,0,.55); display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; cursor:pointer; }
+  .startbtn { width:84px; height:84px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:38px; padding-left:6px; }
+  .starttxt { font-size:16px; font-weight:500; }
   .toast { position:absolute; top:18%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); padding:8px 16px; border-radius:20px; font-size:15px; opacity:0; transition:opacity .2s; pointer-events:none; }
   .toast.on { opacity:1; }
   .ripple { position:absolute; top:50%; transform:translateY(-50%); width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.2);
@@ -96,6 +99,7 @@
   <div class="player show" id="player" tabindex="0">
     <video id="v" playsinline preload="metadata"></video>
 
+    <div class="start" id="start"><div class="startbtn">▶</div><div class="starttxt">Tap to play</div></div>
     <div class="spinner"></div>
     <div class="ripple l" id="rl">⏪ 10s</div>
     <div class="ripple r" id="rr">10s ⏩</div>
@@ -190,15 +194,15 @@ if (CONFIG.poster) v.poster = CONFIG.poster;
 // ---- loop ON by default + autoplay
 v.loop = true;
 $('loop').classList.add('active');
-let autoMuted = false;
-v.play().catch(() => {                 // browsers block sound autoplay -> start muted
-  v.muted = true; autoMuted = true;
-  v.play().catch(() => {});
-  setTimeout(() => toast('Tap anywhere to unmute 🔊'), 400);
+v.muted = false; v.volume = 1;
+v.play().catch(() => {                 // browser blocked sound autoplay -> ask for one tap
+  $('start').style.display = 'flex';
 });
-document.addEventListener('pointerdown', () => {   // first tap unmutes
-  if (autoMuted) { v.muted = false; autoMuted = false; }
-}, { capture:true });
+$('start').addEventListener('click', () => {
+  v.muted = false; v.volume = 1;
+  v.play();
+  $('start').style.display = 'none';
+});
 
 // ---- helpers
 const fmt = s => {
